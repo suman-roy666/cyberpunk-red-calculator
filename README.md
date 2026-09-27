@@ -1,5 +1,234 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+English Version
+_____________________________________________________________________________________________________________________________________________________________
+# Discord (roll mirror)
+
+The site can publish already-calculated rolls to a Discord channel. The bot does not roll dice — it only reproduces the result produced by the site. A single bot serves multiple servers: each table chooses its server and channel. Sending uses the Discord REST API (no gateway), which is stable on Vercel's serverless platform.
+
+1. Create the bot at https://discord.com/developers/applications, copy the token and invite it to your servers (permissions: only **View Channel** and **Send Messages** — do not use Administrator).
+2. Create a Supabase project and run the SQL in `supabase/migrations/20260923120000_mesa_discord_configs.sql` in the SQL Editor (it only creates the `mesa_discord_configs` table).
+3. Copy `.env.example` to `.env.local` and fill in:
+   ```
+   DISCORD_BOT_TOKEN=
+   SUPABASE_URL=
+   SUPABASE_SERVICE_ROLE_KEY=
+   ```
+4. Start the project (`npm run dev`). On the first visit the site asks whether you want to send rolls to Discord; the choice can be changed later in **🎲 Dados** (Dice).
+5. In **🎲 Dados → Discord**: generate/set the table code (e.g. `night-city`) and click **⚙ Configurar servidor** (Configure server) to choose the server and channel. Players use the same table code.
+6. When you roll on the character sheet with sending enabled, the message appears only in the channel of the server linked to that table.
+7. For deployment: also add the three variables above in **Vercel → Settings → Environment Variables** and redeploy.
+
+**Details:**
+
+- The database stores only `sessionCode → guildId → channelId` (no rolls, sheets or characters). RLS is enabled with no policies: only the server (service role) has access.
+- Without consent or without a table code, no information leaves the browser.
+- The token and keys live only on the server (server-side env) and never reach the browser — no `NEXT_PUBLIC_*`.
+- If Discord or the database fails, rolling on the site keeps working normally.
+
+# Online table (group mode)
+
+In addition to local mode (sheet, character creation, combat and rolls all working without a server), the app supports group play: a GM creates a table, players join with a 5-character code, and combat is shared in real time.
+
+## Setup
+
+Run in the Supabase SQL Editor (alongside the Discord migration) the files `supabase/migrations/20260926000000_mesa_sessions.sql`, `supabase/migrations/20260927000000_mesa_combatant_source_key.sql` and `supabase/migrations/20260927000001_mesa_battles.sql` — these create the tables `mesa_sessions`, `mesa_participants`, `mesa_characters`, `mesa_combats`, `mesa_combatants` and `mesa_battles` (RLS enabled with no policies: only the server has access, via service role) and the column `mesa_combatants.source_key`, which identifies which encounter enemy each table row is (without it the app works, it just doesn't mirror enemy HP). The `mesa_battles` table stores match history and makes each encounter single-use (without it combat still works, there is just no history and no blocking of repeated encounters).
+
+Add to `.env.local` (the last two variables are public and go to the browser):
+
+```
+SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
+NEXT_PUBLIC_SUPABASE_URL=        # same project URL
+NEXT_PUBLIC_SUPABASE_ANON_KEY=   # Project Settings → API → anon public
+```
+
+Without the `NEXT_PUBLIC_*` variables the app doesn't break: online mode falls back to 4 s polling instead of Realtime. For true real time, fill them in.
+
+## How to test with 2+ people (different browsers)
+
+1. Run `npm run dev` and open http://localhost:3000 in browser A (the GM).
+2. On the sheet, click **🌐 Mesa online** → **[CRIAR MESA]** (Create table) → GM name → **Criar** (Create). The room opens as a panel over the sheet itself (the URL stays on the main screen); the invite link is `http://localhost:3000/mesa/XXXXX`.
+3. In browser B (or an incognito window), open the same sheet and click **🌐 Mesa online** → **[ENTRAR EM MESA]** (Join table) → type the code → **Entrar** (Join). (The direct link `http://localhost:3000/mesa/XXXXX` also works: it leads to the same main screen with the panel already open — there is no separate table screen.)
+4. Each person links a character (**📋 Usar este personagem na Mesa** — "Use this character at the table"; a copy of the sheet is sent to the server for rules validation).
+5. The GM opens **⚔️ Encontros** (Encounters), creates the encounter (faction, level, enemies) and clicks **[ ⚔ Iniciar combate na Mesa ]** (Start combat at the table) — the enemies created there enter the shared table. Then just **[ ROLAR INICIATIVA ]** (Roll initiative) (1d10 + REF — no critical rule: the extra d10 does not apply to Initiative) and **▶ Iniciar Turno** (Start turn): players act only on their own turn and with the turn's 2 Actions; the server rejects any action outside of that (the UI only hides the buttons).
+6. Action economy: attack/item/other cost 1 of the 2 Actions; moving costs 0 Actions and draws from its own budget of MOVE × 2 meters per turn (MOVE 10 → 20 m, with the cyberware bonus already included). The player types the meters in the field next to **[ MOVER ]** (Move) and the server validates what's left. Enemies use the bestiary MOVE (`moveStat`).
+7. Without opening the panel, roll an attack on the sheet (**🎲 Rolar ataque**, card 03) and reopen the table: the roll is already in **Dados na mesa** (Table dice) and the turn's Actions have been deducted.
+8. Repeat the test by publishing on two devices (same LAN or via a tunnel/ngrok).
+
+The Discord table code (🎲 Dados) is a different thing from the table invite code (`joinCode`, 5 characters). Invite = who joins the session; Discord = where the roll is published.
+
+## Where the table lives in the interface
+
+The table is not a separate screen. The **🌐 Mesa online** button is always in the sheet's nav; creating/joining opens the room as a panel over the main screen (`MesaRoomDock`), and closing it returns the sheet exactly as it was. The `/mesa/XXXXX` route exists only for the invite link and mounts the same main screen with the panel already open. The "which table is open" state lives in `src/lib/mesa/mesaUiStore.ts` (in memory — reloading the page closes the panel; reopen it from the nav).
+
+The connection does not depend on the panel. As long as there is a subscription in `membershipStore`, the player stays at the table even with the panel closed (the sheet, inventory and local rolls keep working normally); the nav button turns into an indicator **● Mesa XXXXX** to show this. There are only two ways out:
+
+- the player clicks **[ Sair da mesa ]** (Leave table) — in the room footer or next to each table in the nav list (`DELETE /api/mesa/[id]/participant` removes them from the player list; the GM can only leave after ending the session);
+- the GM ends the session — then everyone is dropped automatically, including those with the panel closed (the check happens when opening the screen and, with the panel open, in real time).
+
+**[ ⚔ Iniciar combate na Mesa ]** lives in **⚔️ Encontros** (`/gm/encounters`), next to the encounter the GM just built: that is where enemies enter the shared table. The table panel only points to that screen.
+
+## Dice rolled on the sheet count at the table
+
+While the player is connected, the die rolled in `CharacterSheet` *is* the table action — there's no need to repeat the click in the panel:
+
+- The mirroring happens at the same point as the Discord mirror (`CharacterToolkit.onUpdate → publishMesaRoll`), fire-and-forget: an ended table or a network outage never breaks the local sheet; without an active subscription nothing is sent (local mode untouched).
+- `POST /api/mesa/[id]/combat/roll` validates on the server using the same `resolveAction` as the **ATAQUE** (Attack) button. On the player's turn, attacks, skill checks and Evasion deduct 1 Action. Outside their turn or with no Actions left, the roll still enters the log, marked with the reason (`· fora do seu turno` — out of your turn, `· sem Actions sobrando` — no Actions left).
+- Damage, damage taken and free/initiative rolls enter the log without costing an Action (they belong to the same attack or aren't combat actions).
+- Lines appear in **Dados na mesa** (top of the combat panel) and in the **Registro do combate** (Combat log), with name, total and expression: `Zuberi: Ataque Pistola 17 (REF 6 + 1d10 [7])`.
+- With no active combat there is no log: the roll is not sent (`registered: false`). Types with no meaning at the table (e.g. humanity) are rejected with `400 invalid_roll`.
+- **GM in ⚔️ Encontros:** attack, Evasion, damage and initiative rolled for an enemy of the encounter linked to the table are sent along with its key (`key` → `source_key` column) — attack and Evasion deduct 1 Action from the enemy's row (Evasion costs the same as on the sheet) and the log records it under the enemy's name (`Militante: Ataque Fuzil 14 …`). Damage and initiative go in at no cost, as always. Without a key (enemy catalog, encounter not at the table) the roll remains a pure report.
+
+The panel's **[ ATAQUE ]**, **[ ITEM ]** and **[ MOVER ]** buttons still exist as shortcuts (GM or a player without an open sheet) — both paths go through the same server validation. The policy (which rolls are sent and how much they cost) lives in `src/lib/mesa/rollPolicy.ts`, a pure module shared by browser, server and tests.
+
+## HP mirrored at the table
+
+The HP of everyone in combat changes at the source and appears at the table for everyone, in one direction only (sheet/encounter → table; nothing flows back from the table to the sheet — decision of 27/09/2026):
+
+- **Player:** HP, max HP or death that change on the sheet (`CharacterToolkit.onUpdate → publishMesaHp`) update the participant's own row in `mesa_combatants.hp_current`. Damage taken, healing, First Aid, healing items and sheet edits all go through the same path — all fire-and-forget; with no active table nothing is sent.
+- **Enemies:** damage/healing applied on the **⚔️ Encontros** screen (`handleApplyDamage` / `handleHeal → publishMesaEnemyHp`) update the corresponding table row, identified by the new column `mesa_combatants.source_key` (= the stable id of the encounter participant, sent when combat starts). That's why encounters gained `participant.id` (`ensureEncounterIds` fills in those saved before this feature).
+- `POST /api/mesa/[id]/combat/hp` validates on the server: without `key` it's the requester's own combatant; with `key` it's an enemy — GM only. With no active combat or no matching row it returns `updated: false` and nothing changes. The new state is published to Realtime like any other mutation.
+- **Death:** an enemy at 0 HP leaves the turn order and returns with HP > 0 (enemies don't make death saves here); a character is only marked dead when the sheet says `isDead` — 0 HP with a pending death save stays in play.
+- **Migration required for enemies:** if `source_key` doesn't exist in the database, combat still starts normally (the server re-inserts without the column) and enemy HP mirroring refuses with `503 migration_pending`; player mirroring does not depend on that column.
+- Manual GM adjustments in the table panel (−/+ buttons) are still possible, but are overwritten on the next change at the source — the player's sheet and the GM's encounter are in charge.
+
+## Encounter linked to the table and match history
+
+When the GM clicks **⚔ Iniciar combate na Mesa** on the **⚔️ Encontros** screen, the encounter goes along with it and a match is created in `mesa_battles` (migration `20260927000001_mesa_battles.sql`):
+
+- **The encounter is single-use** — `mesa_battles.encounter_id` is `UNIQUE` on the server: an encounter that has already gone into combat can't start a fight again, at any table (`409 encounter_used`). The screen shows the **✅ Concluído** (Completed) badge and the start button disappears. Ad-hoc combat (no encounter) stores `encounter_id = NULL` and blocks nothing.
+- **During combat, the table is in charge:** the encounter pulls enemy HP back (including death) via `source_key` — `useMesaState` (Realtime + 4 s polling) → `applyMesaStateToEncounter`, clamped to [0, max HP] so the local invariant isn't broken. Pushes still originate only from GM clicks (`publishMesaEnemyHp`), so there's no loop: outbound (encounter → table) for actions, inbound (table → encounter) for state.
+- **The match closes automatically at every end of combat:** GM ending it (`endCombat`), the session ending (`finishSession`) or automatic end with all enemies down (`advanceActiveTurn`). The row becomes `completed` with the final snapshot — starting HP, final HP, who died, who left and the final round.
+- **Match history** lives at the bottom of the Encounters screen (`GET /api/mesa/[id]/battles`, GM only): it lists matches with a ✅/⚔ badge and, when the screen opens, reconciles local links (`reconcileEncountersWithBattles`) — covering a fight that ended with the screen closed or one launched in another tab.
+- **Restarting without breaking the rule:** `restart: true` on `POST /combat` restarts the same match that's still active at this table (same row in the history); if a different encounter is active, the server responds `combat_already_active` and the UI ends it before entering. `encounter_used` = completed (never again); `encounter_restart` = restart available.
+- **Migration required for history:** without the `mesa_battles` table combat still starts normally (just without history or blocking) and `GET /battles` responds `503 migration_pending`.
+
+The link (`EncounterData.battle` in the GM's localStorage) is a UI convenience; what actually enforces the block is the server.
+
+## Encounters come pre-filled
+
+`createEncounterFromFaction` builds each enemy with both layers of flavor already in place:
+
+- **2 personality traits** (`getRandomTraits(2)`) — as always.
+- **Implants (cyberware)**, with a quota per level: level 1 → 2, 2 → 3, 3 → 4, 4 → 5 implants (`implantCountForLevel` in `src/data/enemyImplants.ts`). The list starts with the cyberware already in the enemy's JSON (`Enemy.cyberware`, filled in `gm-enemies.ts`) and only then is topped up to the quota with random draws from the cyberware catalog (`items.json`). A base above the quota is not trimmed — what the enemy catalog defines wins.
+
+Enemy implants are description only (decision of 27/09/2026): they appear as a ⚙️ tag on the enemy card, alongside personality traits, and don't affect rolls, HP, armor or Actions — catalog modifiers still apply only to the player's sheet. The field is optional: encounters saved before this feature have no tag (same lack of backfill as personality traits) and enemies created by hand in `/gm/enemies` get only the random draw. Pinned in `tests/enemy-implants.test.ts`.
+
+## Known limitations (Scope 1+2)
+
+- **Delivery 3 pending:** damage/HP/SP/conditions/injuries/death saves are still resolved in the browser and only replicated to other players (the schema and the `combatEngine.ts` adapter are ready to move this to the server).
+- **No accounts:** identity is an anonymous per-browser token (localStorage); clearing browser data frees up the table (the GM can rejoin with the same code).
+- No chat, voice, tactical map or VTT — just the sheet, lobby and shared combat panel.
+- Realtime uses public broadcast by session id (unguessable uuid), not `postgres_changes`.
+
+## Architecture in one line
+
+localStorage remains the local source of truth; the table stores a copy of the sheet in `mesa_characters` (jsonb) so the server can validate the rules. All combat rules live in `src/lib/combatEngine.ts` (pure functions), used by both local mode and the server endpoint — the only difference is where state is persisted.
+
+# Cyberware: what already applies an effect
+
+The catalog (`src/data/items.json`) has these fields per item:
+
+- `effects` — text shown to the player (shop, inventory and sheet).
+- `modifiers` — structured numeric effect, which is what the engine actually applies. Only passive effects go here (always active while the piece is installed).
+- `activation` — activatable effect: defines the stages of a manual toggle on the cyberware card. While the piece is inactive nothing is applied; turning the toggle on applies the modifiers for that stage.
+- `action` — button-triggered ability (heal), available only while the piece is activated.
+
+What reads `modifiers`/`activation` is `src/lib/cyberwareEffects.ts`, consumed by `rollSkillCheck`, `rollAttack`, `rollEvasion`, Initiative, damage (`src/lib/damage.ts`) and installation (`src/lib/cyberware.ts` / `src/lib/inventory.ts`). Every applied bonus is credited in the roll history as `Cyberware (Name)`.
+
+| Cyberware | Applied effect |
+|---|---|
+| Gorilla Arms | +2 Brawling · unarmed attack +1d6 |
+| Audio Filter | +2 Perception |
+| Reinforced Tendons | +2 Athletics (jump checks) |
+| Targeting Scope | +1 to ranged attacks |
+| Smart Weapon Link | +1 to attacks with Smart weapons |
+| Subdermal Armor / Skin Weave | SP 11 / 7 on the body (doesn't stack with armor: the higher one applies) |
+| Mantis Blades / Monowire / Projectile Launch System | become their own weapon on installation (removed from the sheet along with the piece) |
+
+**Requirements (`requires`)** — checked when installing/equipping, with the error message shown in the inventory:
+
+- `neural_link` is required by all cyberware in the neuralware subcategory (Sandevistan, Kerenzikov, Reflex Tuner, Combat Awareness Processor, Smart Weapon Link).
+- `cybereye` / `cyberaudio` for optical and audio enhancements — the Cybereye accepts at most 2 optical enhancements.
+- `smart_link` to equip Smart weapons.
+
+**Assumed approximations** (the engine doesn't model the context yet): Targeting Scope applies to any ranged attack (there's no concept of range) and Reinforced Tendons adds +2 to any Athletics check (there's no standalone jump check).
+
+Enemies in **⚔️ Encontros** also come with implants randomly drawn by level — but there it's description only (a tag on the card, no modifiers): see *Encounters come pre-filled*.
+
+## Manual activation (per-piece toggle)
+
+Without a combat round system, activatable effects use a manual toggle on the cyberware card: the button cycles through the stages (inactive → stage 0 → stage 1 → … → inactive). Duration, "once per combat" and number of uses are up to the player — the toggle is the lock, not a timer.
+
+| Cyberware | Stages | Applied effect |
+|---|---|---|
+| Sandevistan | Acelerado (Accelerated) | +4 Initiative · +1 Evasion (the "+1 REF on reaction checks") |
+| Kerenzikov | Em movimento (In motion) | +2 Initiative · +1 Evasion |
+| Combat Awareness Processor | Em combate (In combat) | +2 Perception |
+| Optical Camo | Camuflado (Camouflaged) | +4 Stealth |
+| Adrenaline Booster | Impulso → Rescaldo (Boost → Aftermath) | +2 MOVE (shown on the stat) → −1 on physical checks |
+| Pain Editor | Ignorando dor (Ignoring pain) | cancels the −2 serious-wound (HP) penalty on First Aid, skill, attack and Evasion |
+| Reflex Tuner | Pronto para repetir (Ready to repeat) | unlocks the **↻ Repetir** (Repeat) button on Initiative; using it turns the piece off |
+| Nano Repair | Rodada ativa (Active round) | unlocks **✚ +2 HP** (doesn't heal above max) |
+
+**Serious-wound penalty (issue #4, fixed):** `getWoundPenalty` (`src/lib/calculations.ts`) is the single source — it returns −2 when the character is Seriously/Mortally Wounded and 0 when the Pain Editor is active. It applies to First Aid, `rollSkillCheck`, `rollAttack`, `rollEvasion` and Initiative; in all of them it appears as the tag "Lesão grave (HP)" (Serious wound) in the modifiers, so the player can see where the −2 came from. Only the GM's enemy rolls remain out of scope — noted in `PENDENCIAS.md`.
+
+## Roll math
+
+A single identity holds for all four rolls and is what the sheet draws on screen:
+
+```
+total = base STAT + skill + d10 + Σ(modifiers)
+```
+
+- `rollSkillCheck` and `rollAttack` count the injury STAT penalty only once (it appears as a tag; the displayed STAT is the base) — previously it was counted twice in both.
+- `rollAttack` counts `context.modifiers` once — previously it was applied twice.
+- Weapon attacks get the "Distância" (Ranged) / "Corpo a corpo" (Melee) injury modifiers — previously no weapon attack got them, because detection checked `context.type` (always `"weapon"`) instead of the resolved type; the list also now uses `AttackType` (including `smg`).
+- Initiative moved out of the component into `src/lib/initiative.ts` and now includes cyberware, injuries and serious wounds. The roll itself is pure 1d10 + REF: no critical rule — a natural 10 doesn't add an extra d10 and a natural 1 doesn't subtract (the same rule applies to enemies, in `rollEnemyInitiative`, and to the table's **[ ROLAR INICIATIVA ]**).
+
+Pinned in `tests/roll-modifier-math.test.ts` and `tests/initiative.test.ts`.
+
+## Attack × damage validation
+
+`tests/cyberware-combat-matrix.test.ts` pins two things separately for each scenario:
+
+- the damage expression of the attack result (`result.damageDice`) — this is what the **Rolar Dano** (Roll Damage) button uses;
+- the attack modifiers (`result.modifiers`) — and the total must equal stat + skill + d10 + modifiers, proving each bonus counts exactly once.
+
+The damage bonus (`unarmed_damage`) never appears as an attack modifier and no attack bonus changes the damage expression. `rollDamage` confirms the number of dice is actually rolled. Coverage: Gorilla Arms (Brawling, Martial Arts, Brawling weapon, melee weapon), Targeting Scope, Smart Weapon Link, cyberware armor and Mantis Blades.
+
+To avoid "just trust it", the sheet shows the damage breakdown right below the button (`Rolar Dano (3d6) → Base (BODY 5): 2d6 · Gorilla Arms: +1d6`). The field comes from `result.damageSources`, filled in `rollAttack` for unarmed attacks; weapons have no breakdown, because the damage is the weapon's own. `tests/cyberware-damage-e2e.test.ts` repeats the exact UI flow (attack list → attack → damage → application) for BODY 2/5/7/9 with and without Gorilla Arms, for both unarmed strikes.
+
+**Decision:** Gorilla Arms does not give +2 to Martial Arts (the stated effect is "+2 Brawling"); the +1d6 damage applies to both, since it's an unarmed-attack effect.
+
+## Pain Editor validation
+
+`tests/pain-editor-validation.test.ts` covers three fronts:
+
+- **First Aid** → the −2 drops out of the calculation when the toggle is on (`injuryModifier` goes from −2 to 0, an exact difference of 2) and returns when it's off. Run at HP 0/40 (Mortally Wounded).
+- **Scope** → it ignores only the −2 coming from HP. A Critical Injury of −2 to all actions still applies even with the implant on (−4 with toggle off, −2 with toggle on).
+- **Skill, attack and Evasion** → at HP 10/40 and HP 0/40 all three rolls lose exactly 2 points compared to the same healthy character (and the "Lesão grave (HP)" tag appears in the modifiers). Turning on the Pain Editor restores all three to the healthy character's value and the tag disappears.
+
+# Brawling and Martial Arts
+
+Rules implemented on 25/09/2026 (`tests/martial-arts.test.ts` covers each item):
+
+- **Damage by BODY, the same for both strikes:** 1–4 = 1d6 · 5–6 = 2d6 · 7–10 = 3d6 · 11+ = 4d6 (single source: `getUnarmedDamageDice`; BODY 9/10 went from 4d6 to 3d6 — issue #6 was the test expecting 2d6 at BODY 2, and it was wrong).
+- **Cyberarm = 2d6 floor:** with any cyberarm installed, unarmed damage doesn't go below 2d6, and Gorilla Arms' +1d6 still stacks on top (table decision: floor + bonus, not floor instead of bonus — BODY 5 with Gorilla Arms stays at 3d6).
+- **Four forms are separate skills:** Martial Arts (Karate), (Taekwondo), (Judo), (Aikido), category `fighting`, double cost, no required level at creation. They're used only for that form's Special Moves (each move rolls only its own form's level — Karate 4 + Aikido 3 never counts as 7).
+- **A single attack card** (table decision of 26/09/2026): the "Rolar Ataques" (Roll Attacks) list in Card 03 has a single **Martial Arts** card, which rolls the parent skill (`martial_arts`, the IP one). The forms don't become their own attack cards. The card only appears with a parent level > 0.
+- **ROF 2** appears in the details of every skill-based attack (Brawling and the forms).
+- **Martial Arts ignores half of SP, rounded up** (SP 11 → 6): this applies along the `rollAttack → rollDamage → applyAttackDamage` path, which carries `attackType` all the way, and the sheet notes it below the damage. Brawling and weapons still use full SP.
+- **Special Moves** (`src/data/specialMoves.ts`): the 9 moves (Recovery + 8 per form) appear in Card 03 with the original requirement, the original effect, the skill that will be used and the reason for being locked in red. Structured requirements: form skill, WILL 8+, MOVE 8+ and turn flags. `check` rolls the form's skill vs the DV from the JSON; `attack` (Bone Breaking Strike, Pressure Point Strike, Flying Kick) becomes a normal Martial Arts attack — same list, same damage button, same SP rule.
+- **Special Moves start locked and cost 1 point** (table decision of 25/09/2026): points come from the parent Martial Arts skill (1 point per level; MA 4 = 4 points). The same pool pays for specializations (scaling cost: Karate 1 = 1 pt, Karate 2 = 2 pt…) and move unlocks. The card shows the balance (`level 4 = 4 pts · 3 in specializations · 1 in moves · 0 free`), a **Liberável**/**Travado** (Unlockable/Locked) badge, a **🔓 Desbloquear** (Unlock) button and **↺ Devolver** (Refund point). The original requirements still apply after paying. Tests: `tests/martial-arts.test.ts` (single pool, refund, refusal).
+- **Specializations in Card 03:** the 4 forms (Karate, Taekwondo, Judo, Aikido) were removed from the skill list and got their own panel in Card 03, between Attacks and Special Moves, with ↑/↓ to raise/revert level (scaling cost in MA points), the pool balance and a debt warning. The parent Martial Arts skill stays in the skill list (bought with IP) and shows a badge **N pontos livres** (N free points) — it's the only source of points: 1 point per level.
+
+**Out of scope for this round** (detailed in `PENDENCIAS.md`): Grapple/Grab/Choke/Throw don't exist in the app, ROF 2 is informational (there's no action economy), turn state is manual in the Card 03 panel, and effects that target someone else (injuries, ablation, Prone) are reported, not applied — the player's sheet has no target.
+
+_____________________________________________________________________________________________________________________________________________________________
+Portuguese Version
+_____________________________________________________________________________________________________________________________________________________________
 ## Discord (espelho de rolagens)
 
 O site pode publicar as rolagens já calculadas em um canal do Discord. O bot **não rola dados** — ele apenas reproduz o resultado produzido pelo site. Um **único bot** atende vários servidores: cada mesa escolhe servidor e canal. O envio usa a **API REST** do Discord (sem gateway), estável no serverless da Vercel.
