@@ -2,15 +2,18 @@
  * @file en.ts
  * @description This file contains the English translations for the application.
  **/
-import type { UIStrings } from "./pt";
 
-export const en: UIStrings = {
-  common: {},
+export const en = {
+  common: {
+    commonLanguage: "Language",
+  },
   character: {
-    loadingSheet: "Loading sheet...",
+    loadingSheet: "Initializing...",
   },
   sheets: {},
   combat: {},
   dice: {},
   gm: {},
 };
+
+export type UIStrings = typeof en;

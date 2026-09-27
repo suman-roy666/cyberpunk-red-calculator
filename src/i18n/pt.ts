@@ -2,10 +2,15 @@
  * @file pt.ts
  * @description This file contains the Portuguese translations for the application.
  **/
-export const pt = {
-  common: {},
+
+import type { UIStrings } from "./en";
+
+export const pt : UIStrings = {
+  common: {
+    commonLanguage: "Idioma",
+  },
   character: {
-    loadingSheet: "Carregando ficha...",
+    loadingSheet: "Inicializando...",
   },
   sheets: {},
   combat: {},
@@ -13,4 +18,3 @@ export const pt = {
   gm: {},
 };
 
-export type UIStrings = typeof pt;
