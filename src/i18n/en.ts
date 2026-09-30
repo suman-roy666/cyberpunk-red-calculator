@@ -6,9 +6,7 @@
 export const en = {
   common: {
     commonLanguage: "Language",
-  },
-  errorMessages: {
-    notAnImage: "The file must be an image."
+    imageUploadError: "The file must be an image.",
   },
   character: {
     loadingSheet: "Initializing...",
