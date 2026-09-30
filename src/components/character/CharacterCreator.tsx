@@ -11,6 +11,7 @@ import { createEmptyCharacter, statNames, type AttributeName, type Character } f
 import { skillDefinitions } from "@/data/skills";
 import { roleDefinitions } from "@/data/roles";
 import { addPrimaryRole } from "@/lib/roles";
+import { en } from "@/i18n/en";
 
 interface CharacterCreatorProps { initialCharacter?: Character; onSaved?: (character: Character) => void; }
 
@@ -30,7 +31,11 @@ export default function CharacterCreator({ initialCharacter, onSaved }: Characte
       return;
     }
 
-    // Redimensiona e comprime a imagem antes de salvar (máx. 512x512, qualidade 0.85)
+    /** 
+     * Resizes and compresses the image before saving. (máx. 512x512, qualidade 0.85)
+     * 
+     * Resdeclaraing as const izes and compresses the image before saving. (máx. 512x512, quality 0.85)
+     * */ 
     const image = new Image();
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -123,8 +128,67 @@ export default function CharacterCreator({ initialCharacter, onSaved }: Characte
 
     setCharacter(char);
   }
-  function saveCharacter() { if (!validation.valid) return; const trimmed = { ...character, identity: { ...character.identity, name: character.identity.name.trim() } }; const finalized = isEditing ? trimmed : finalizeCharacterCreation(trimmed); setCharacter(finalized); upsertCharacter(finalized); setActiveCharacterId(finalized.id); onSaved?.(finalized); }
+  function saveCharacter() { if (!validation.valid) return; const trimmed = { ...character, identity: { ...character.identity, name: character.identity.name.trim() } }; 
+    const finalized = isEditing ? trimmed : finalizeCharacterCreation(trimmed); setCharacter(finalized); upsertCharacter(finalized); setActiveCharacterId(finalized.id); onSaved?.(finalized); 
+  }
+  
   const roleIcon = character.primaryRole ? Object.values(roleDefinitions).find(r => r.id === character.primaryRole)?.name?.charAt(0) ?? '?' : '?';
   
-  return <main className="creator-shell"><header className="creator-header"><p className="eyebrow">Cyberpunk RED Toolkit</p><h1>Crie sua ficha.</h1><p>Distribua os pontos de criação. Eles deixam de existir quando a ficha é finalizada.</p></header><CreationSummary character={character} mode={isEditing ? "edit" : "creation"} /><section className="creator-grid"><div className="creator-card identity-card"><div className="section-heading"><span>01</span><h2>Identidade</h2></div><div className="identity-hero"><div className="identity-avatar">{character.identity.photoUrl ? <img src={character.identity.photoUrl} alt="Prévia do personagem" /> : <div className="avatar-placeholder"><span>{roleIcon}</span></div>}<label className="avatar-upload-overlay"><input type="file" accept="image/*" onChange={handlePhotoFile} hidden /><span>📷</span></label></div><div className="identity-main-fields"><div className="identity-name-input"><input id="char-name" value={character.identity.name} onChange={(event) => setIdentity("name", event.target.value)} placeholder="Nome do Personagem" /></div><div className="identity-role-select"><select id="char-role" value={character.primaryRole ?? ""} onChange={(event) => update((current) => event.target.value ? addPrimaryRole(current, event.target.value as keyof typeof roleDefinitions) : current)}><option value="">Selecione uma Role</option>{Object.values(roleDefinitions).map((role) => <option value={role.id} key={role.id}>{role.name}</option>)}</select></div></div></div><div className="identity-secondary"><div className="identity-field"><label htmlFor="player-name">Jogador</label><input id="player-name" value={character.identity.player} onChange={(event) => setIdentity("player", event.target.value)} placeholder="Seu nome" /></div><div className="identity-url-field"><label>Foto URL</label><div className="photo-url-row"><input id="photo-url" value={photoSource} onChange={(event) => setPhotoSource(event.target.value)} placeholder="Cole a URL da imagem..." /><button type="button" onClick={usePhotoUrl}>Aplicar</button></div>{photoError && <p className="form-error">{photoError}</p>}</div></div></div><div className="creator-card attributes-card"><div className="section-heading"><span>02</span><h2>Atributos</h2></div><AttributeAllocation character={character} onChange={(attribute: AttributeName, delta) => update((current) => changeAttributeAtCreation(current, attribute, delta))} /></div></section><section className="creator-card skills-card"><div className="section-heading"><span>03</span><h2>Perícias</h2></div><p className="helper-text">As 13 Basic Skills começam no nível 2: 26 pontos obrigatórios já descontados dos 86; restam 60 pontos livres. Perícias x2 custam 2 pontos por nível.</p><SkillAllocation character={character} onChange={(id, delta) => update((current) => changeSkillAtCreation(current, id, delta))} /></section><footer className="creator-footer"><p>{validation.valid ? "Ficha válida para criação." : "Corrija as pendências acima para criar o personagem."}</p><div className="creator-footer-actions"><button type="button" className="secondary-button" onClick={randomAllocate}>🎲 Distribuir Aleatório</button><button type="button" className="save-button" onClick={saveCharacter} disabled={!validation.valid}>Criar personagem</button></div></footer></main>;
+  return <main className="creator-shell">
+          <header className="creator-header">
+            <p className="eyebrow">Cyberpunk RED Toolkit</p><h1>{en.character.createCharacterPageHeading}</h1>
+            <p>{en.character.createCharacterSubheading}</p></header>
+            <CreationSummary character={character} mode={isEditing ? "edit" : "creation"} />
+              <section className="creator-grid"><div className="creator-card identity-card"><div className="section-heading">
+                <span>01</span><h2>{en.character.identityHeading}</h2></div>
+                
+                <div className="identity-hero">
+                  <div className="identity-avatar">{character.identity.photoUrl ? <img src={character.identity.photoUrl} alt={en.character.characterPortraitAlt} /> : <div className="avatar-placeholder"><span>{roleIcon}</span></div>}
+                  <label className="avatar-upload-overlay"><input type="file" accept="image/*" onChange={handlePhotoFile} hidden /><span>📷</span>
+                  </label>
+                </div>
+                
+                <div className="identity-main-fields">
+                  <div className="identity-name-input"><input id="char-name" value={character.identity.name} onChange={(event) => setIdentity("name", event.target.value)} placeholder={en.character.characterNamePlaceholder} />
+                </div>
+                
+                <div className="identity-role-select">
+                  <select id="char-role" value={character.primaryRole ?? ""} onChange={(event) => update((current) => event.target.value ? addPrimaryRole(current, event.target.value as keyof typeof roleDefinitions) : current)}>
+                    <option value="">{en.character.characterRolePlaceholder}</option>{Object.values(roleDefinitions).map((role) => <option value={role.id} key={role.id}>{role.name}</option>)}
+                  </select>
+                  </div>
+                  </div>
+                </div>
+                
+                <div className="identity-secondary">
+                  <div className="identity-field"><label htmlFor="player-name">{en.character.playerLabel}</label>
+                  <input id="player-name" value={character.identity.player} onChange={(event) => setIdentity("player", event.target.value)} placeholder={en.character.playerNamePlaceholder} />
+                </div>
+                
+                <div className="identity-url-field">
+                  <label>{en.character.photoUrlLabel}</label>
+                  <div className="photo-url-row">
+                    <input id="photo-url" value={photoSource} onChange={(event) => setPhotoSource(event.target.value)} placeholder={en.character.photoUrlPlaceholder} />
+                    <button type="button" onClick={usePhotoUrl}>{en.character.applyImageButton}</button>
+                  </div>
+                    {photoError && <p className="form-error">{photoError}</p>}
+                  </div></div>
+                </div>
+                
+                <div className="creator-card attributes-card">
+                  <div className="section-heading"><span>02</span><h2>{en.character.statsHeading}</h2></div>
+                  <AttributeAllocation character={character} onChange={(attribute: AttributeName, delta) => update((current) => changeAttributeAtCreation(current, attribute, delta))} />
+                </div></section>
+
+                <section className="creator-card skills-card"><div className="section-heading"><span>03</span><h2>{en.character.skillsHeading}</h2></div>
+                  <p className="helper-text">{en.character.skillsHelp}</p>
+                  <SkillAllocation character={character} onChange={(id, delta) => update((current) => changeSkillAtCreation(current, id, delta))} />
+              </section>
+            <footer className="creator-footer"><p>{validation.valid ? en.character.sheetValid : en.character.sheetInvalid}</p>
+              <div className="creator-footer-actions">
+                <button type="button" className="secondary-button" onClick={randomAllocate}>🎲 {en.character.randomAllocateButton}</button>
+                <button type="button" className="save-button" onClick={saveCharacter} disabled={!validation.valid}>{en.character.createCharacterButton}</button>
+              </div>
+            </footer>
+          </main>;
 }
