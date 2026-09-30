@@ -9,6 +9,9 @@ export const pt : UIStrings = {
   common: {
     commonLanguage: "Idioma",
   },
+  errorMessages: {
+    notAnImage: "O arquivo deve ser uma imagem."
+  },
   character: {
     loadingSheet: "Inicializando...",
     createCharacterPageHeading: "Crie sua ficha",

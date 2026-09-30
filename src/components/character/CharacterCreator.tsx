@@ -27,7 +27,7 @@ export default function CharacterCreator({ initialCharacter, onSaved }: Characte
     const file = event.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith("image/")) {
-      setPhotoError("O arquivo deve ser uma imagem.");
+      setPhotoError(en.errorMessages.notAnImage);
       return;
     }
 
