@@ -3,9 +3,7 @@
  * @description This file contains the Portuguese translations for the application.
  **/
 
-import type { UIStrings } from "./en";
-
-export const pt : UIStrings = {
+export const pt = {
   common: {
     commonLanguage: "Idioma",
     imageUploadError: "O arquivo deve ser uma imagem.",
@@ -37,3 +35,4 @@ export const pt : UIStrings = {
   gm: {},
 };
 
+export type UIStrings = typeof pt;

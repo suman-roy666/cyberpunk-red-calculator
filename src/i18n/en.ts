@@ -3,7 +3,9 @@
  * @description This file contains the English translations for the application.
  **/
 
-export const en = {
+import type { UIStrings } from "./pt";
+
+export const en: UIStrings = {
   common: {
     commonLanguage: "Language",
     imageUploadError: "The file must be an image.",
@@ -34,5 +36,3 @@ export const en = {
   dice: {},
   gm: {},
 };
-
-export type UIStrings = typeof en;

@@ -1,6 +1,5 @@
-import type { UIStrings } from "./en";
+import { type UIStrings, pt } from "./pt";
 import { en } from "./en";
-import { pt } from "./pt";
 
 export const locales = ["en", "pt"] as const; // List of supported locales. Add new locales here when creating new translation files.
 export type Locale = (typeof locales)[number]; // Type representing the list of supported locales
