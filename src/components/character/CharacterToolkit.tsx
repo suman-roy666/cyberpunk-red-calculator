@@ -6,6 +6,7 @@ import CharacterCreator from "@/components/character/CharacterCreator";
 import CharacterSheet from "@/components/sheets/CharacterSheet";
 import { getActiveCharacter, upsertCharacter } from "@/lib/storage";
 import type { Character } from "@/types/character";
+import { en } from "@/i18n/en";
 
 type Screen = "sheet" | "creator";
 
@@ -21,7 +22,7 @@ export default function CharacterToolkit() {
     setReady(true);
   }, []);
 
-  if (!ready) return <main className="loading-screen">Carregando ficha...</main>;
+  if (!ready) return <main className="loading-screen">{en.character.loadingSheet}</main>;
 
   if (screen === "creator") {
     return <CharacterCreator initialCharacter={character ?? undefined} onSaved={(saved) => { setCharacter(saved); setScreen("sheet"); }} />;

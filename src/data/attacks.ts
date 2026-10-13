@@ -2,7 +2,9 @@ import type { CatalogItem } from "@/data/items";
 import type { AttackType } from "@/types/attack";
 
 export type WeaponAttackProfile = { type: AttackType; skillId: string };
-/** Perfis centralizados para os subtipos já presentes no catálogo. */
+/** Perfis centralizados para os subtipos já presentes no catálogo. 
+ * TRANSLATION: Centralized profiles for the subtypes already present in the catalog.  
+*/
 const subcategoryProfiles: Record<string, WeaponAttackProfile> = {
   handgun: { type: "handgun", skillId: "handgun" },
   smg: { type: "smg", skillId: "shoulder_arms" },
